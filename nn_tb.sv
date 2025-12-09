@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 module tb_nn;
-    localparam int N = 200;
+    localparam int N = 40;
 //    int W = 16;
     logic clk;
 //    logic [2:0] layer;
@@ -21,9 +21,10 @@ module tb_nn;
     always #5 clk = ~clk; 
     int i, j;
     initial begin
-        in = 3;
-        clk = 0;
         rst = 1;
+        in = 16'sd614;
+        clk = 0;
+        
         
         #10;
         rst = 0;
