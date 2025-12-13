@@ -1,20 +1,23 @@
 module top (
-    input  logic clk,       // Main FPGA Oscillator
-    input  logic rst_n,     // Reset Button (Active Low)
-    output logic uart_txd   // The Pin connected to USB-UART TX
+    input  logic clk,       // Mapped to PACKAGE_PIN N15 (100MHz)
+    input  logic reset,     // Mapped to PACKAGE_PIN J2 
+    output logic uart_txd   // Mapped to PACKAGE_PIN B16
 );
 
+    // Note: Your XDC uses 'reset' as the port name. 
+    // We will use 'rst_n' internally and assume the reset signal is ACTIVE HIGH 
+    // based on the common practice of FPGA reset buttons being synchronous or inverted.
+    // If your reset button is active-low, you can change the line below.
+    logic rst_n = ~reset; 
+    
     // ==========================================
     // CONFIGURATION AREA
     // ==========================================
-    // 1. Enter your Clock Frequency (e.g., 50MHz = 50000000, 100MHz = 100000000)
-    localparam CLOCK_FREQ = 100000000; 
-    
-    // 2. Enter your desired Baud Rate (Standard is 9600 or 115200)
+    localparam CLOCK_FREQ = 100000000; // 100 MHz (from XDC: period 10.000ns)
     localparam BAUD_RATE  = 115200;
 
-    // Auto-calculate the divider
-    localparam CLKS_PER_BIT = CLOCK_FREQ / BAUD_RATE;
+    // Auto-calculated divider: 100,000,000 / 115,200 = 868.05
+    localparam CLKS_PER_BIT = 868; 
     // ==========================================
 
     logic       tx_active;
@@ -22,8 +25,7 @@ module top (
     logic       tx_dv;
     logic [7:0] tx_byte;
     
-    // Delay counter to slow down the output so you can see it
-    // (Otherwise it prints 10,000 lines per second)
+    // Delay counter to send '1' roughly 10 times per second
     logic [31:0] delay_cnt;
     localparam DELAY_CYCLES = CLOCK_FREQ / 10; // 0.1 second delay
 
@@ -32,6 +34,7 @@ module top (
     state_t state;
 
     // Instantiate the UART Transmitter
+    // We pass the calculated CLKS_PER_BIT to the module
     uart_tx #(.CLKS_PER_BIT(CLKS_PER_BIT)) u_tx (
         .clk(clk),
         .rst_n(rst_n),
@@ -49,22 +52,23 @@ module top (
             tx_byte   <= 8'h00;
             delay_cnt <= 0;
         end else begin
+            // Default to no action
+            tx_dv <= 0;
+
             case (state)
                 IDLE: begin
                     // Prepare the data: ASCII '1' is hex 0x31
                     tx_byte <= 8'h31; 
                     
-                    // Trigger the UART
+                    // Trigger the UART for one clock cycle
                     tx_dv   <= 1'b1;
                     state   <= TRANSMIT;
                 end
 
                 TRANSMIT: begin
-                    // Clear the trigger
-                    tx_dv <= 1'b0;
-                    
-                    // Wait for the UART module to finish
+                    // Wait for the UART module to finish (tx_done pulse)
                     if (tx_done) begin
+                        delay_cnt <= 0;
                         state <= DELAY;
                     end
                 end
