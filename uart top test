@@ -1,0 +1,85 @@
+module top (
+    input  logic clk,       // Main FPGA Oscillator
+    input  logic rst_n,     // Reset Button (Active Low)
+    output logic uart_txd   // The Pin connected to USB-UART TX
+);
+
+    // ==========================================
+    // CONFIGURATION AREA
+    // ==========================================
+    // 1. Enter your Clock Frequency (e.g., 50MHz = 50000000, 100MHz = 100000000)
+    localparam CLOCK_FREQ = 100000000; 
+    
+    // 2. Enter your desired Baud Rate (Standard is 9600 or 115200)
+    localparam BAUD_RATE  = 115200;
+
+    // Auto-calculate the divider
+    localparam CLKS_PER_BIT = CLOCK_FREQ / BAUD_RATE;
+    // ==========================================
+
+    logic       tx_active;
+    logic       tx_done;
+    logic       tx_dv;
+    logic [7:0] tx_byte;
+    
+    // Delay counter to slow down the output so you can see it
+    // (Otherwise it prints 10,000 lines per second)
+    logic [31:0] delay_cnt;
+    localparam DELAY_CYCLES = CLOCK_FREQ / 10; // 0.1 second delay
+
+    // State machine to handle the repetition
+    typedef enum logic [1:0] {IDLE, TRANSMIT, DELAY} state_t;
+    state_t state;
+
+    // Instantiate the UART Transmitter
+    uart_tx #(.CLKS_PER_BIT(CLKS_PER_BIT)) u_tx (
+        .clk(clk),
+        .rst_n(rst_n),
+        .tx_byte(tx_byte),
+        .tx_dv(tx_dv),
+        .tx_active(tx_active),
+        .tx_serial(uart_txd),
+        .tx_done(tx_done)
+    );
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            state     <= IDLE;
+            tx_dv     <= 0;
+            tx_byte   <= 8'h00;
+            delay_cnt <= 0;
+        end else begin
+            case (state)
+                IDLE: begin
+                    // Prepare the data: ASCII '1' is hex 0x31
+                    tx_byte <= 8'h31; 
+                    
+                    // Trigger the UART
+                    tx_dv   <= 1'b1;
+                    state   <= TRANSMIT;
+                end
+
+                TRANSMIT: begin
+                    // Clear the trigger
+                    tx_dv <= 1'b0;
+                    
+                    // Wait for the UART module to finish
+                    if (tx_done) begin
+                        state <= DELAY;
+                    end
+                end
+
+                DELAY: begin
+                    // Wait 0.1s before sending again
+                    if (delay_cnt < DELAY_CYCLES) begin
+                        delay_cnt <= delay_cnt + 1;
+                    end else begin
+                        delay_cnt <= 0;
+                        state     <= IDLE;
+                    end
+                end
+            endcase
+        end
+    end
+
+endmodule
